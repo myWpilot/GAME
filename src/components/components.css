@@ -19,6 +19,19 @@
 .lobby-stats-win { color: #2D5F3E; font-weight: 600; }
 .lobby-stats-loss { color: var(--maroon); font-weight: 600; }
 
+.site-footer {
+  position: fixed;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--text-gold-dim);
+  opacity: 0.55;
+  font-family: var(--font-mono);
+  letter-spacing: 0.2px;
+  pointer-events: none;
+}
+
 .auth-tabs { display: flex; gap: 4px; background: var(--parchment-dim); border-radius: 10px; padding: 4px; margin-bottom: 18px; }
 .auth-tabs button { flex: 1; background: transparent; color: var(--ink-soft); padding: 9px; font-size: 13px; }
 .auth-tab-active { background: var(--white) !important; color: var(--ink) !important; box-shadow: 0 1px 4px rgba(0,0,0,0.12); }
