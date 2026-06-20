@@ -109,3 +109,120 @@ export function playCard(state, playerIndex, card) {
   s.funMessageCategory = null;
 
   if (s.trick.length < 4) {
+    s.turnIndex = (playerIndex + 1) % 4;
+    s.turnDeadline = new Date(Date.now() + TURN_SECONDS * 1000).toISOString();
+    s.version += 1;
+    return s;
+  }
+
+  // El tamamlandı
+  const winnerIndex = resolveTrick(s.trick, s.currentGameType, s.trumpSuit);
+  const winnerId = s.players[winnerIndex].id;
+  const pts = trickScore(s.trick, s.currentGameType, s.trickIndex, 13);
+
+  applyFunMessage(s, winnerId, pts);
+  trackCollectedPenaltyCards(s, winnerId);
+
+  if (s.currentGameType === 'KOZ') {
+    s.totals[winnerId].koz += pts;
+  } else if (pts !== 0) {
+    s.totals[winnerId].breakdown[s.currentGameType] += pts;
+  }
+
+  s.lastTrickWinner = winnerIndex;
+  s.trickIndex += 1;
+  s.trick = [];
+
+  // Rıfkı'da kupa papazı bir kez alındı mı, elin geri kalanını oynamanın anlamı kalmıyor - el hemen biter
+  if (s.currentGameType === 'RIFKI' && pts !== 0) {
+    return endHand(s);
+  }
+
+  if (s.trickIndex >= 13) {
+    return endHand(s);
+  }
+
+  s.leaderIndex = winnerIndex;
+  s.turnIndex = winnerIndex;
+  s.turnDeadline = new Date(Date.now() + TURN_SECONDS * 1000).toISOString();
+  s.version += 1;
+  return s;
+}
+
+const PENALTY_TRIGGER = {
+  KIZ: (c) => c.rank === 12,
+  ERKEK: (c) => c.rank === 11 || c.rank === 13,
+  KUPA: (c) => c.suit === 'H',
+};
+
+// Kız/Erkek/Kupa almaz oyunlarında, alınan ceza kartlarını (kız/vale-papaz/kupa) o eli alan
+// oyuncunun önünde, el bitene kadar açık göstermek için biriktirir.
+function trackCollectedPenaltyCards(s, winnerId) {
+  const trigger = PENALTY_TRIGGER[s.currentGameType];
+  if (!trigger) return;
+  const won = s.trick.filter((t) => trigger(t.card)).map((t) => t.card);
+  if (won.length === 0) return;
+  s.collectedPenaltyCards = { ...s.collectedPenaltyCards };
+  s.collectedPenaltyCards[winnerId] = [...(s.collectedPenaltyCards[winnerId] || []), ...won];
+}
+
+function applyFunMessage(s, winnerId, pts) {
+  const winnerName = s.players.find((p) => p.id === winnerId).name;
+  let category = null;
+  if (s.currentGameType === 'RIFKI' && pts !== 0) category = 'RIFKI';
+  else if (s.currentGameType === 'KIZ' && pts !== 0) category = 'KIZ';
+  else if (s.currentGameType === 'ERKEK' && pts !== 0) category = 'ERKEK';
+  else if (s.currentGameType === 'SON_IKI' && pts !== 0) category = s.trickIndex === 12 ? 'SON_IKI_SON' : 'SON_IKI_ILK';
+  else if (s.currentGameType === 'KUPA' && pts !== 0) category = 'KUPA';
+  else if (s.currentGameType === 'EL' && pts !== 0) category = 'EL';
+
+  if (category) {
+    s.funMessage = funMessage(category, { name: winnerName, points: pts }, s.lastFunMessageByCategory?.[category]);
+    s.funMessageCategory = category;
+    s.lastFunMessageByCategory = { ...(s.lastFunMessageByCategory || {}), [category]: s.funMessage };
+
+    const totalPenalty = -(Object.values(s.totals[winnerId].breakdown).reduce((a, b) => a + b, 0));
+    if (totalPenalty >= 1000 && totalPenalty - Math.abs(pts) < 1000) {
+      s.funMessage = funMessage('MILESTONE', { name: winnerName, points: totalPenalty }, null);
+      s.funMessageCategory = 'MILESTONE';
+    }
+  }
+}
+
+function endHand(s) {
+  s.phase = 'HAND_END';
+  s.handNumber += 1;
+  s.trick = [];
+  s.turnDeadline = null;
+
+  if (s.handNumber > TOTAL_HANDS) {
+    s.phase = 'MATCH_END';
+    s.version += 1;
+    return s;
+  }
+
+  s.declarerIndex = (s.declarerIndex + 1) % 4;
+  s.currentGameType = null;
+  s.trumpSuit = null;
+  s.hands = dealHand();
+  s.trickIndex = 0;
+  s.heartsBroken = false;
+  s.trumpBroken = false;
+  s.collectedPenaltyCards = {};
+  s.phase = 'DECLARING';
+  s.turnDeadline = new Date(Date.now() + DECLARE_SECONDS * 1000).toISOString();
+  s.version += 1;
+  return s;
+}
+
+export function netScore(state, playerId) {
+  const t = state.totals[playerId];
+  const cezaTotal = Object.values(t.breakdown).reduce((a, b) => a + b, 0); // negatif
+  return t.koz + cezaTotal;
+}
+
+export function cezaTotal(state, playerId) {
+  return Object.values(state.totals[playerId].breakdown).reduce((a, b) => a + b, 0);
+}
+
+export { TURN_SECONDS, DECLARE_SECONDS, OPENING_SECONDS, TOTAL_HANDS };
