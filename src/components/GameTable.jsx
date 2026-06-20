@@ -5,6 +5,7 @@ import ScorePanel from './ScorePanel';
 import {
   declareGame,
   playCard,
+  resolveCompletedTrick,
   legalMovesFor,
   availableDeclareOptions,
   netScore,
@@ -18,9 +19,7 @@ export default function GameTable({ gameRow, user, onReturnToLobby }) {
   const [row, setRow] = useState(gameRow);
   const [now, setNow] = useState(Date.now());
   const [suitPicker, setSuitPicker] = useState(false);
-  const [, forceTrickRerender] = useState(0);
   const autoPlayedFor = useRef(null);
-  const frozenTrickRef = useRef([]);
 
   const state = row.state;
   const myIndex = state.players.findIndex((p) => p.id === user.id);
@@ -28,24 +27,7 @@ export default function GameTable({ gameRow, user, onReturnToLobby }) {
   const legal = legalMovesFor(state, myIndex);
   const isMyTurn = state.phase === 'PLAYING' && state.turnIndex === myIndex;
   const isMyDeclare = state.phase === 'DECLARING' && state.declarerIndex === myIndex;
-
-  // Tamamlanan eldeki 4. kağıt da bir an görünsün diye, eli temizleyen state güncellemesini
-  // render sırasında yakalayıp bir ref'te tutuyoruz; gerçekten boşaltmayı ~1.3sn geciktiriyoruz.
-  if (state.trick.length > 0) {
-    frozenTrickRef.current = state.trick;
-  }
-  const displayTrick = state.trick.length > 0 ? state.trick : frozenTrickRef.current;
-
-  useEffect(() => {
-    if (state.trick.length === 0 && frozenTrickRef.current.length > 0) {
-      const timer = setTimeout(() => {
-        frozenTrickRef.current = [];
-        forceTrickRerender((t) => t + 1);
-      }, 1300);
-      return () => clearTimeout(timer);
-    }
-    return undefined;
-  }, [state.trick, state.version]);
+  const displayTrick = state.trick; // artık gerçek state - 4. kağıt TRICK_DONE fazında gerçekten masada duruyor
 
   useEffect(() => {
     const channel = supabase
@@ -61,6 +43,17 @@ export default function GameTable({ gameRow, user, onReturnToLobby }) {
     const t = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(t);
   }, []);
+
+  // 4 kağıt da masaya konduktan ~1.3sn sonra eli sonuçlandır (kazananı belirle, puanı işle, temizle)
+  useEffect(() => {
+    if (state.phase !== 'TRICK_DONE') return undefined;
+    const firstHumanIndex = state.players.findIndex((p) => !isBot(p.id));
+    if (myIndex !== firstHumanIndex) return undefined;
+    const timer = setTimeout(() => {
+      pushState(resolveCompletedTrick(state));
+    }, 1300);
+    return () => clearTimeout(timer);
+  }, [state.phase, state.version, myIndex]);
 
   // Süre dolunca otomatik kart oyna (sadece sırası gelen oyuncunun kendi cihazı tetikler)
   useEffect(() => {
@@ -189,6 +182,9 @@ export default function GameTable({ gameRow, user, onReturnToLobby }) {
                 )}
               </div>
               <PenaltyCardsRow cards={state.collectedPenaltyCards?.[p.id]} />
+              {state.currentGameType === 'EL' && (
+                <span className="trick-count-badge">{state.trickCountThisHand?.[p.id] || 0} el</span>
+              )}
             </div>
           );
         })}
@@ -251,6 +247,9 @@ export default function GameTable({ gameRow, user, onReturnToLobby }) {
             })}
           </div>
           <PenaltyCardsRow cards={state.collectedPenaltyCards?.[user.id]} />
+          {state.currentGameType === 'EL' && (
+            <span className="trick-count-badge">{state.trickCountThisHand?.[user.id] || 0} el</span>
+          )}
           {isMyTurn && <div className="turn-hint">Sıra sende — {TURN_SECONDS} saniyen var</div>}
         </div>
       </div>
