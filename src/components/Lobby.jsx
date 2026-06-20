@@ -309,6 +309,7 @@ export default function Lobby({
           </div>
         )}
       </div>
+      <footer className="site-footer">Volkan Eren · volkaneren34@hotmail.com</footer>
     </div>
   );
 }
