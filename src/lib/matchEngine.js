@@ -39,6 +39,7 @@ export function createMatch(players) {
     heartsBroken: false,
     trumpBroken: false,
     collectedPenaltyCards: {},
+    trickCountThisHand: {},
     lastTrickWinner: null,
     funMessage: null,
     funMessageCategory: null,
@@ -85,6 +86,7 @@ export function declareGame(state, gameType, trumpSuit) {
   s.heartsBroken = false;
   s.trumpBroken = false;
   s.collectedPenaltyCards = {};
+  s.trickCountThisHand = {};
   s.turnDeadline = new Date(Date.now() + OPENING_SECONDS * 1000).toISOString();
   s.version += 1;
   return s;
@@ -115,13 +117,29 @@ export function playCard(state, playerIndex, card) {
     return s;
   }
 
-  // El tamamlandı
+  // 4. kağıt da masaya kondu - herkes görsün diye burada DURUYORUZ, henüz sonuçlandırmıyoruz.
+  // Sonuçlandırma (resolveCompletedTrick) birkaç saniye sonra ayrı bir adımda yapılacak.
+  s.phase = 'TRICK_DONE';
+  s.turnDeadline = null;
+  s.version += 1;
+  return s;
+}
+
+const TOTAL_TRIGGER_COUNT = { KIZ: 4, ERKEK: 8, KUPA: 13 };
+
+// Masadaki 4 kağıt bir süre görüldükten sonra çağrılır: eli kazananı belirler, puanı işler,
+// gerekiyorsa eli (hatta hepsi çıktıysa) erken bitirir.
+export function resolveCompletedTrick(state) {
+  if (state.phase !== 'TRICK_DONE') return state;
+  const s = structuredClone(state);
+
   const winnerIndex = resolveTrick(s.trick, s.currentGameType, s.trumpSuit);
   const winnerId = s.players[winnerIndex].id;
   const pts = trickScore(s.trick, s.currentGameType, s.trickIndex, 13);
 
   applyFunMessage(s, winnerId, pts);
   trackCollectedPenaltyCards(s, winnerId);
+  s.trickCountThisHand = { ...s.trickCountThisHand, [winnerId]: (s.trickCountThisHand[winnerId] || 0) + 1 };
 
   if (s.currentGameType === 'KOZ') {
     s.totals[winnerId].koz += pts;
@@ -132,10 +150,21 @@ export function playCard(state, playerIndex, card) {
   s.lastTrickWinner = winnerIndex;
   s.trickIndex += 1;
   s.trick = [];
+  s.phase = 'PLAYING';
 
-  // Rıfkı'da kupa papazı bir kez alındı mı, elin geri kalanını oynamanın anlamı kalmıyor - el hemen biter
+  // Rıfkı'da kupa papazı alındıysa el hemen biter
   if (s.currentGameType === 'RIFKI' && pts !== 0) {
     return endHand(s);
+  }
+
+  // Kız/Erkek/Kupa'da o türün TÜM kağıtları (4 kız / 8 erkek / 13 kupa) artık dağıtıldıysa,
+  // kalan ellerde bu oyun için kazanılacak/kaybedilecek bir şey kalmadı - el hemen biter.
+  const totalForType = TOTAL_TRIGGER_COUNT[s.currentGameType];
+  if (totalForType) {
+    const seenSoFar = Object.values(s.collectedPenaltyCards).reduce((sum, arr) => sum + arr.length, 0);
+    if (seenSoFar >= totalForType) {
+      return endHand(s);
+    }
   }
 
   if (s.trickIndex >= 13) {
@@ -209,6 +238,7 @@ function endHand(s) {
   s.heartsBroken = false;
   s.trumpBroken = false;
   s.collectedPenaltyCards = {};
+  s.trickCountThisHand = {};
   s.phase = 'DECLARING';
   s.turnDeadline = new Date(Date.now() + DECLARE_SECONDS * 1000).toISOString();
   s.version += 1;
