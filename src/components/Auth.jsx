@@ -78,6 +78,7 @@ export default function Auth() {
           Google ile devam et
         </button>
       </div>
+      <footer className="site-footer">Volkan Eren · volkaneren34@hotmail.com</footer>
     </div>
   );
 }
